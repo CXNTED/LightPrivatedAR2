@@ -1,7 +1,7 @@
 local MouseLock = {
     Settings = {
         Enabled = false,
-        Key = Enum.KeyCode.X,
+        Key = Enum.KeyCode.G,
         Prediction = 0.065,
         AimPart = "Head",
         Snappiness = 0.5,
