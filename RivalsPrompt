@@ -4,7 +4,7 @@ local MouseLock = {
         Key = Enum.KeyCode.X,
         Prediction = 0.033,
         AimPart = "Head",
-        Snappiness = 1,
+        Snappiness = 1.35,
         FOVRadius = 150
     }
 }
