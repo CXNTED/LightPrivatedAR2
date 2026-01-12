@@ -1,3 +1,20 @@
+-- USER ID WHITELIST
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local WHITELIST = {
+    [3106043913] = true,
+    [9203182168] = true,
+    [7689681898] = true,
+    [8582624936] = true,
+}
+
+if not WHITELIST[LocalPlayer.UserId] then
+    LocalPlayer:Kick("Ask King Light I Guess")
+    return
+end
+
+
 --// ================= CONFIG =================
 local MAX_DISTANCE = 9999
 local UPDATE_RATE = 2
