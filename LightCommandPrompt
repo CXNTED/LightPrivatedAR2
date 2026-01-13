@@ -6,7 +6,7 @@ local WHITELIST = {
     [3106043913] = true,
     [9203182168] = true,
     [7689681898] = true,
-    [8582624936] = true,
+    [2790927569] = true,
 }
 
 if not WHITELIST[LocalPlayer.UserId] then
