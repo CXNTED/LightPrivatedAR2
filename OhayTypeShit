@@ -2,22 +2,37 @@ local MouseLock = {
     Settings = {
         Enabled = false,
         Key = Enum.KeyCode.X,
-        Prediction = 0.065,
+        Prediction = 0.086,
         AimPart = "Head",
-        Snappiness = 0.55,
-        FOVRadius = 100
+        Snappiness = 1.5,
+        FOVRadius = 150
     }
 }
 
+-- Services
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
 
 local LockedPlayer = nil
 
--- 🔍 Find ONE player inside FOV (only on toggle)
+-- Debounce for smoothness keys
+local lastSmoothChange = 0
+local SMOOTHNESS_COOLDOWN = 0.15
+
+-- 🔔 Smoothness notification
+local function NotifySmoothness()
+    StarterGui:SetCore("SendNotification", {
+        Title = "MouseLock",
+        Text = "Smoothness: " .. string.format("%.2f", MouseLock.Settings.Snappiness),
+        Duration = 2
+    })
+end
+
+-- 🔍 Find ONE player inside FOV
 local function FindTarget()
     local mousePos = UserInputService:GetMouseLocation()
     local closest, closestDist = nil, MouseLock.Settings.FOVRadius
@@ -44,21 +59,42 @@ local function FindTarget()
     return closest
 end
 
--- 🔁 Toggle lock (ONLY time target can change)
+-- 🎮 Input handling
 UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
+    if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+    local now = os.clock()
+
+    -- Toggle lock (silent)
     if input.KeyCode == MouseLock.Settings.Key then
         MouseLock.Settings.Enabled = not MouseLock.Settings.Enabled
+        LockedPlayer = MouseLock.Settings.Enabled and FindTarget() or nil
+        return
+    end
 
-        if MouseLock.Settings.Enabled then
-            LockedPlayer = FindTarget() -- lock once
-        else
-            LockedPlayer = nil -- unlock only here
-        end
+    -- Cooldown to prevent double notifications
+    if now - lastSmoothChange < SMOOTHNESS_COOLDOWN then return end
+
+    -- ➖ Decrease smoothness
+    if input.KeyCode == Enum.KeyCode.Minus
+        or input.KeyCode == Enum.KeyCode.KeypadMinus then
+
+        lastSmoothChange = now
+        MouseLock.Settings.Snappiness = math.max(0.1, MouseLock.Settings.Snappiness - 0.1)
+        NotifySmoothness()
+    end
+
+    -- ➕ Increase smoothness
+    if input.KeyCode == Enum.KeyCode.Equals
+        or input.KeyCode == Enum.KeyCode.KeypadPlus then
+
+        lastSmoothChange = now
+        MouseLock.Settings.Snappiness += 0.1
+        NotifySmoothness()
     end
 end)
 
--- 🔒 Stay locked forever until YOU unlock
+-- 🔒 Stay locked until YOU unlock
 RunService.RenderStepped:Connect(function()
     if not MouseLock.Settings.Enabled or not LockedPlayer then return end
 
@@ -67,7 +103,7 @@ RunService.RenderStepped:Connect(function()
         or not char:FindFirstChild(MouseLock.Settings.AimPart)
         or not char:FindFirstChild("Humanoid")
         or char.Humanoid.Health <= 0 then
-        return -- do NOT auto unlock or switch
+        return
     end
 
     local part = char[MouseLock.Settings.AimPart]
@@ -79,162 +115,8 @@ RunService.RenderStepped:Connect(function()
     local mousePos = UserInputService:GetMouseLocation()
     local delta = Vector2.new(screenPos.X, screenPos.Y) - mousePos
 
-    -- ❌ DO NOT unlock if they leave FOV
     mousemoverel(
         delta.X * MouseLock.Settings.Snappiness,
         delta.Y * MouseLock.Settings.Snappiness
     )
-end)
-
-wait(0.1)
-
---// ================= CONFIG =================
-local MAX_DISTANCE = 9999
-local UPDATE_RATE = 2
-local TOGGLE_KEY = Enum.KeyCode.K
-local NAME_TOGGLE_KEY = Enum.KeyCode.Y
-
--- Colors (outline only)
-local OUTLINE_COLOR = Color3.fromRGB(255, 255, 255)
-
---// ================= SERVICES =================
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
-
-local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
-
---// ================= STATE =================
-local espEnabled = true
-local nameEnabled = false
-
-local highlights = {} -- [Player] = data
-
---// ================= CLEANUP =================
-local function cleanupESP(player)
-	local data = highlights[player]
-	if not data then return end
-
-	if data.highlight then data.highlight:Destroy() end
-	if data.billboard then data.billboard:Destroy() end
-
-	highlights[player] = nil
-end
-
---// ================= ESP CREATION =================
-local function createESP(player)
-	if player == LocalPlayer then return end
-	cleanupESP(player)
-
-	local char = player.Character
-	if not char then return end
-
-	local root = char:FindFirstChild("HumanoidRootPart")
-	local head = char:FindFirstChild("Head")
-	local humanoid = char:FindFirstChildOfClass("Humanoid")
-
-	if not root or not humanoid then return end
-
-	-- Highlight (white outline only)
-	local hl = Instance.new("Highlight")
-	hl.Adornee = char
-	hl.FillTransparency = 1
-	hl.OutlineTransparency = 0
-	hl.OutlineColor = OUTLINE_COLOR
-	hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-	hl.Enabled = espEnabled
-	hl.Parent = char
-
-	-- Billboard (Name + Distance)
-	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.new(0, 120, 0, 40)
-	bb.AlwaysOnTop = true
-	bb.Enabled = nameEnabled
-	bb.Adornee = head or root
-	bb.StudsOffset = head and Vector3.new(0, 1.5, 0) or Vector3.new(0, 3.5, 0)
-	bb.Parent = char
-
-	local textLabel = Instance.new("TextLabel")
-	textLabel.Size = UDim2.new(1, 0, 1, 0)
-	textLabel.BackgroundTransparency = 1
-	textLabel.TextColor3 = Color3.new(1, 1, 1)
-	textLabel.TextStrokeTransparency = 0
-	textLabel.Font = Enum.Font.SourceSansBold
-	textLabel.TextSize = 14
-	textLabel.Text = ""
-	textLabel.Parent = bb
-
-	highlights[player] = {
-		highlight = hl,
-		root = root,
-		billboard = bb,
-		textLabel = textLabel
-	}
-
-	-- Cleanup on death
-	humanoid.Died:Connect(function()
-		cleanupESP(player)
-	end)
-end
-
---// ================= PLAYER TRACKING =================
-local function trackPlayer(player)
-	player.CharacterAdded:Connect(function()
-		task.wait(0.2)
-		createESP(player)
-	end)
-
-	player.CharacterRemoving:Connect(function()
-		cleanupESP(player)
-	end)
-
-	if player.Character then
-		createESP(player)
-	end
-end
-
-for _, player in ipairs(Players:GetPlayers()) do
-	trackPlayer(player)
-end
-
-Players.PlayerAdded:Connect(trackPlayer)
-Players.PlayerRemoving:Connect(cleanupESP)
-
---// ================= TOGGLES =================
-UIS.InputBegan:Connect(function(input, gp)
-	if gp then return end
-
-	if input.KeyCode == TOGGLE_KEY then
-		espEnabled = not espEnabled
-		for _, data in pairs(highlights) do
-			data.highlight.Enabled = espEnabled
-		end
-	elseif input.KeyCode == NAME_TOGGLE_KEY then
-		nameEnabled = not nameEnabled
-		for _, data in pairs(highlights) do
-			data.billboard.Enabled = nameEnabled
-		end
-	end
-end)
-
---// ================= DISTANCE UPDATE =================
-local elapsed = 0
-
-RunService.Heartbeat:Connect(function(dt)
-	elapsed += dt
-	if elapsed < UPDATE_RATE then return end
-	elapsed = 0
-
-	local camPos = Camera.CFrame.Position
-
-	for player, data in pairs(highlights) do
-		local root = data.root
-		if root then
-			local distance = (root.Position - camPos).Magnitude
-
-			data.highlight.Enabled = espEnabled and distance <= MAX_DISTANCE
-			data.textLabel.Text = player.Name .. " | " .. math.floor(distance) .. " studs"
-		end
-	end
 end)
