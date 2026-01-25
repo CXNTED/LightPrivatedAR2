@@ -1,0 +1,432 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+if not _G.FullBrightExecuted then
+
+	_G.FullBrightEnabled = false
+
+	_G.NormalLightingSettings = {
+		Brightness = game:GetService("Lighting").Brightness,
+		ClockTime = game:GetService("Lighting").ClockTime,
+		FogEnd = game:GetService("Lighting").FogEnd,
+		GlobalShadows = game:GetService("Lighting").GlobalShadows,
+		Ambient = game:GetService("Lighting").Ambient
+	}
+
+	game:GetService("Lighting"):GetPropertyChangedSignal("Brightness"):Connect(function()
+		if game:GetService("Lighting").Brightness ~= 1 and game:GetService("Lighting").Brightness ~= _G.NormalLightingSettings.Brightness then
+			_G.NormalLightingSettings.Brightness = game:GetService("Lighting").Brightness
+			if not _G.FullBrightEnabled then
+				repeat
+					wait()
+				until _G.FullBrightEnabled
+			end
+			game:GetService("Lighting").Brightness = 1
+		end
+	end)
+
+	game:GetService("Lighting"):GetPropertyChangedSignal("ClockTime"):Connect(function()
+		if game:GetService("Lighting").ClockTime ~= 12 and game:GetService("Lighting").ClockTime ~= _G.NormalLightingSettings.ClockTime then
+			_G.NormalLightingSettings.ClockTime = game:GetService("Lighting").ClockTime
+			if not _G.FullBrightEnabled then
+				repeat
+					wait()
+				until _G.FullBrightEnabled
+			end
+			game:GetService("Lighting").ClockTime = 12
+		end
+	end)
+
+	game:GetService("Lighting"):GetPropertyChangedSignal("FogEnd"):Connect(function()
+		if game:GetService("Lighting").FogEnd ~= 786543 and game:GetService("Lighting").FogEnd ~= _G.NormalLightingSettings.FogEnd then
+			_G.NormalLightingSettings.FogEnd = game:GetService("Lighting").FogEnd
+			if not _G.FullBrightEnabled then
+				repeat
+					wait()
+				until _G.FullBrightEnabled
+			end
+			game:GetService("Lighting").FogEnd = 786543
+		end
+	end)
+
+	game:GetService("Lighting"):GetPropertyChangedSignal("GlobalShadows"):Connect(function()
+		if game:GetService("Lighting").GlobalShadows ~= false and game:GetService("Lighting").GlobalShadows ~= _G.NormalLightingSettings.GlobalShadows then
+			_G.NormalLightingSettings.GlobalShadows = game:GetService("Lighting").GlobalShadows
+			if not _G.FullBrightEnabled then
+				repeat
+					wait()
+				until _G.FullBrightEnabled
+			end
+			game:GetService("Lighting").GlobalShadows = false
+		end
+	end)
+
+	game:GetService("Lighting"):GetPropertyChangedSignal("Ambient"):Connect(function()
+		if game:GetService("Lighting").Ambient ~= Color3.fromRGB(178, 178, 178) and game:GetService("Lighting").Ambient ~= _G.NormalLightingSettings.Ambient then
+			_G.NormalLightingSettings.Ambient = game:GetService("Lighting").Ambient
+			if not _G.FullBrightEnabled then
+				repeat
+					wait()
+				until _G.FullBrightEnabled
+			end
+			game:GetService("Lighting").Ambient = Color3.fromRGB(178, 178, 178)
+		end
+	end)
+
+	game:GetService("Lighting").Brightness = 1
+	game:GetService("Lighting").ClockTime = 12
+	game:GetService("Lighting").FogEnd = 786543
+	game:GetService("Lighting").GlobalShadows = false
+	game:GetService("Lighting").Ambient = Color3.fromRGB(178, 178, 178)
+
+	local LatestValue = true
+	spawn(function()
+		repeat
+			wait()
+		until _G.FullBrightEnabled
+		while wait() do
+			if _G.FullBrightEnabled ~= LatestValue then
+				if not _G.FullBrightEnabled then
+					game:GetService("Lighting").Brightness = _G.NormalLightingSettings.Brightness
+					game:GetService("Lighting").ClockTime = _G.NormalLightingSettings.ClockTime
+					game:GetService("Lighting").FogEnd = _G.NormalLightingSettings.FogEnd
+					game:GetService("Lighting").GlobalShadows = _G.NormalLightingSettings.GlobalShadows
+					game:GetService("Lighting").Ambient = _G.NormalLightingSettings.Ambient
+				else
+					game:GetService("Lighting").Brightness = 1
+					game:GetService("Lighting").ClockTime = 12
+					game:GetService("Lighting").FogEnd = 786543
+					game:GetService("Lighting").GlobalShadows = false
+					game:GetService("Lighting").Ambient = Color3.fromRGB(178, 178, 178)
+				end
+				LatestValue = not LatestValue
+			end
+		end
+	end)
+end
+
+_G.FullBrightExecuted = true
+_G.FullBrightEnabled = not _G.FullBrightEnabled
+
+
+wait(0.1)
+
+
+local MouseLock = {
+    Settings = {
+        Enabled = false,
+        Key = Enum.KeyCode.X,
+        Prediction = 0.055,
+        AimPart = "Head",
+        Snappiness = 4,
+        FOVRadius = 250
+    }
+}
+
+-- Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+
+local LockedPlayer = nil
+
+-- Debounce for smoothness keys
+local lastSmoothChange = 0
+local SMOOTHNESS_COOLDOWN = 0.15
+
+-- 🔔 Smoothness notification
+local function NotifySmoothness()
+    StarterGui:SetCore("SendNotification", {
+        Title = "MouseLock",
+        Text = "Smoothness: " .. string.format("%.2f", MouseLock.Settings.Snappiness),
+        Duration = 2
+    })
+end
+
+-- 🔍 Find ONE player inside FOV
+local function FindTarget()
+    local mousePos = UserInputService:GetMouseLocation()
+    local closest, closestDist = nil, MouseLock.Settings.FOVRadius
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer
+            and plr.Character
+            and plr.Character:FindFirstChild(MouseLock.Settings.AimPart)
+            and plr.Character:FindFirstChild("Humanoid")
+            and plr.Character.Humanoid.Health > 0 then
+
+            local part = plr.Character[MouseLock.Settings.AimPart]
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+
+            if onScreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if dist <= closestDist then
+                    closest, closestDist = plr, dist
+                end
+            end
+        end
+    end
+
+    return closest
+end
+
+-- 🎮 Input handling
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+    local now = os.clock()
+
+    -- Toggle lock (silent)
+    if input.KeyCode == MouseLock.Settings.Key then
+        MouseLock.Settings.Enabled = not MouseLock.Settings.Enabled
+        LockedPlayer = MouseLock.Settings.Enabled and FindTarget() or nil
+        return
+    end
+
+    -- Cooldown to prevent double notifications
+    if now - lastSmoothChange < SMOOTHNESS_COOLDOWN then return end
+
+    -- ➖ Decrease smoothness
+    if input.KeyCode == Enum.KeyCode.Minus
+        or input.KeyCode == Enum.KeyCode.KeypadMinus then
+
+        lastSmoothChange = now
+        MouseLock.Settings.Snappiness = math.max(0.1, MouseLock.Settings.Snappiness - 0.1)
+        NotifySmoothness()
+    end
+
+    -- ➕ Increase smoothness
+    if input.KeyCode == Enum.KeyCode.Equals
+        or input.KeyCode == Enum.KeyCode.KeypadPlus then
+
+        lastSmoothChange = now
+        MouseLock.Settings.Snappiness += 0.1
+        NotifySmoothness()
+    end
+end)
+
+-- 🔒 Stay locked until YOU unlock
+RunService.RenderStepped:Connect(function()
+    if not MouseLock.Settings.Enabled or not LockedPlayer then return end
+
+    local char = LockedPlayer.Character
+    if not char
+        or not char:FindFirstChild(MouseLock.Settings.AimPart)
+        or not char:FindFirstChild("Humanoid")
+        or char.Humanoid.Health <= 0 then
+        return
+    end
+
+    local part = char[MouseLock.Settings.AimPart]
+    local predicted = part.Position + (part.AssemblyLinearVelocity * MouseLock.Settings.Prediction)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(predicted)
+
+    if not onScreen then return end
+
+    local mousePos = UserInputService:GetMouseLocation()
+    local delta = Vector2.new(screenPos.X, screenPos.Y) - mousePos
+
+    mousemoverel(
+        delta.X * MouseLock.Settings.Snappiness,
+        delta.Y * MouseLock.Settings.Snappiness
+    )
+end)
+
+wait(0.1)
+
+--// ================= CONFIG =================
+local MAX_DISTANCE = 9999
+local UPDATE_RATE = 2
+local TOGGLE_KEY = Enum.KeyCode.K
+local NAME_TOGGLE_KEY = Enum.KeyCode.Y
+local TOGGLE_FRIEND_KEY = Enum.KeyCode.P
+
+--// ================= SERVICES =================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+--// ================= STATE =================
+local espEnabled = true
+local nameEnabled = false
+local friendCheckEnabled = true
+
+local highlights = {} -- [Player] = data
+local friendCache = {} -- [UserId] = true
+
+--// ================= FRIEND CACHE =================
+local function cacheFriend(player)
+	if player ~= LocalPlayer then
+		friendCache[player.UserId] = LocalPlayer:IsFriendsWith(player.UserId)
+	end
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+	cacheFriend(p)
+end
+
+Players.PlayerAdded:Connect(cacheFriend)
+Players.PlayerRemoving:Connect(function(player)
+	friendCache[player.UserId] = nil
+end)
+
+--// ================= CLEANUP =================
+local function cleanupESP(player)
+	local data = highlights[player]
+	if not data then return end
+
+	if data.highlight then data.highlight:Destroy() end
+	if data.billboard then data.billboard:Destroy() end
+
+	highlights[player] = nil
+end
+
+--// ================= ESP CREATION =================
+local function createESP(player)
+	if player == LocalPlayer then return end
+	cleanupESP(player)
+
+	local char = player.Character
+	if not char then return end
+
+	local root = char:FindFirstChild("HumanoidRootPart")
+	local head = char:FindFirstChild("Head")
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+
+	if not root or not humanoid then return end
+
+	local isFriend = friendCache[player.UserId]
+
+	-- Highlight (WHITE OUTLINE ONLY)
+	local hl = Instance.new("Highlight")
+	hl.Adornee = char
+
+	-- No fill at all
+	hl.FillTransparency = 1
+	hl.FillColor = Color3.new(1, 1, 1)
+
+	-- White outline
+	hl.OutlineTransparency = 0
+	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+
+	hl.Enabled = espEnabled
+	hl.Parent = char
+
+	-- Billboard (Name + Distance)
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.new(0, 140, 0, 40)
+	bb.AlwaysOnTop = true
+	bb.Enabled = nameEnabled
+
+	if head then
+		bb.Adornee = head
+		bb.StudsOffset = Vector3.new(0, 1.5, 0)
+	else
+		bb.Adornee = root
+		bb.StudsOffset = Vector3.new(0, 3.5, 0)
+	end
+
+	bb.Parent = char
+
+	local textLabel = Instance.new("TextLabel")
+	textLabel.Size = UDim2.new(1, 0, 1, 0)
+	textLabel.BackgroundTransparency = 1
+	textLabel.TextColor3 = Color3.new(1, 1, 1)
+	textLabel.TextStrokeTransparency = 0
+	textLabel.Font = Enum.Font.SourceSansBold
+	textLabel.TextSize = 14
+	textLabel.Text = ""
+	textLabel.Parent = bb
+
+	highlights[player] = {
+		highlight = hl,
+		root = root,
+		billboard = bb,
+		textLabel = textLabel
+	}
+
+	-- Cleanup on death
+	humanoid.Died:Connect(function()
+		cleanupESP(player)
+	end)
+end
+
+--// ================= PLAYER TRACKING =================
+local function trackPlayer(player)
+	player.CharacterAdded:Connect(function()
+		task.wait(0.2)
+		createESP(player)
+	end)
+
+	player.CharacterRemoving:Connect(function()
+		cleanupESP(player)
+	end)
+
+	if player.Character then
+		createESP(player)
+	end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	trackPlayer(player)
+end
+
+Players.PlayerAdded:Connect(trackPlayer)
+Players.PlayerRemoving:Connect(cleanupESP)
+
+--// ================= TOGGLES =================
+UIS.InputBegan:Connect(function(input, gp)
+	if gp then return end
+
+	if input.KeyCode == TOGGLE_KEY then
+		espEnabled = not espEnabled
+		for _, data in pairs(highlights) do
+			data.highlight.Enabled = espEnabled
+		end
+	end
+
+	if input.KeyCode == NAME_TOGGLE_KEY then
+		nameEnabled = not nameEnabled
+		for _, data in pairs(highlights) do
+			data.billboard.Enabled = nameEnabled
+		end
+	end
+
+	if input.KeyCode == TOGGLE_FRIEND_KEY then
+		friendCheckEnabled = not friendCheckEnabled
+	end
+end)
+
+--// ================= DISTANCE UPDATE =================
+local elapsed = 0
+
+RunService.Heartbeat:Connect(function(dt)
+	elapsed += dt
+	if elapsed < UPDATE_RATE then return end
+	elapsed = 0
+
+	local camPos = Camera.CFrame.Position
+
+	for player, data in pairs(highlights) do
+		local root = data.root
+		if root then
+			local distance = (root.Position - camPos).Magnitude
+			local isFriend = friendCache[player.UserId]
+
+			-- Visibility only (NO COLOR CHANGES)
+			data.highlight.Enabled =
+				espEnabled
+				and distance <= MAX_DISTANCE
+				and (not friendCheckEnabled or not isFriend)
+
+			data.textLabel.Text =
+				player.Name .. " | " .. math.floor(distance) .. " studs"
+		end
+	end
+end)
