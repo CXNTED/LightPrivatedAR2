@@ -13,13 +13,243 @@ local UIS = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+--// ================= IMPORTED SCRIPT CODE =================
+-- This is the AR2 script you wanted to import. It runs when you type 777888.
+local ImportedScriptCode = [[
+    local success, err = pcall(function()
+        local Bullets = require(game:GetService("ReplicatedStorage").Client.Libraries.Bullets)
+        local originalFire = Bullets.Fire
+
+        local Settings = {
+            AimbotEnabled = true,
+            TargetMaxDist = 1500,
+            FovVisible = false,
+            FovRadius = 25,
+            DynamicFovRadius = 125,
+            CloseRangeLimit = 50,
+            DistancePredictionMult = 0.000325,
+            TargetMode = "Closest Part",
+            SnaplineEnabled = false,
+            WallCheckEnabled = false,
+            AimSmoothing = 1,
+            NoSpreadEnabled = true
+        }
+
+        local positionCache = {}
+        local currentTargetPart = nil
+
+        local fov = Drawing.new("Circle")
+        fov.Thickness = 1
+        fov.Filled = false
+        fov.Color = Color3.fromRGB(255, 255, 255)
+
+        local snapline = Drawing.new("Line")
+        snapline.Thickness = 1
+        snapline.Color = Color3.fromRGB(255, 65, 65)
+        snapline.Transparency = 0.8
+
+        local visualSmoothDirection = Camera.CFrame.LookVector
+
+        local function getTargetableParts(model)
+            local parts = {}
+            if Settings.TargetMode == "Head" then
+                local head = model:FindFirstChild("Head")
+                if head then table.insert(parts, head) end
+            elseif Settings.TargetMode == "UpperTorso" then
+                local torso = model:FindFirstChild("UpperTorso") or model:FindFirstChild("Torso")
+                if torso then table.insert(parts, torso) end
+            else
+                local head = model:FindFirstChild("Head")
+                local torso = model:FindFirstChild("Torso") or model:FindFirstChild("UpperTorso")
+                if head then table.insert(parts, head) end
+                if torso then table.insert(parts, torso) end
+            end
+            return parts
+        end
+
+        local function isPartVisible(targetPart, character)
+            if not Settings.WallCheckEnabled then return true end
+            local charParts = character:GetChildren()
+            local myCharParts = LocalPlayer.Character and LocalPlayer.Character:GetChildren() or {}
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            local filter = {}
+            for _, p in ipairs(charParts) do table.insert(filter, p) end
+            for _, p in ipairs(myCharParts) do table.insert(filter, p) end
+            if Camera then table.insert(filter, Camera) end
+            params.FilterDescendantsInstances = filter
+            local rayResult = workspace:Raycast(Camera.CFrame.Position, targetPart.Position - Camera.CFrame.Position, params)
+            return rayResult == nil
+        end
+
+        RunService.RenderStepped:Connect(function()
+            local mouseLoc = UIS:GetMouseLocation()
+            local myCharacter = LocalPlayer.Character
+            local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+            
+            fov.Position = mouseLoc
+            fov.Visible = Settings.FovVisible
+            fov.Radius = Settings.FovRadius
+
+            local closestPart = nil
+            local closestDist2D = math.huge
+
+            local function scan(model)
+                for _, part in ipairs(getTargetableParts(model)) do
+                    local dist3D = myRoot and (part.Position - myRoot.Position).Magnitude or math.huge
+                    if dist3D <= Settings.TargetMaxDist then
+                        local targetFovScale = (dist3D <= Settings.CloseRangeLimit) and Settings.DynamicFovRadius or Settings.FovRadius
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen and isPartVisible(part, model) then
+                            local dist2D = (Vector2.new(screenPos.X, screenPos.Y) - mouseLoc).Magnitude
+                            if dist2D < targetFovScale and dist2D < closestDist2D then
+                                closestDist2D = dist2D
+                                closestPart = part
+                            end
+                        end
+                    end
+                end
+            end
+
+            if workspace:FindFirstChild("Characters") then
+                for _, m in ipairs(workspace.Characters:GetChildren()) do 
+                    if m ~= myCharacter then scan(m) end 
+                end
+            end
+
+            currentTargetPart = closestPart
+
+            if Settings.SnaplineEnabled and currentTargetPart and currentTargetPart.Parent then
+                local targetPos = currentTargetPart.Position
+                local cache = positionCache[currentTargetPart]
+                local vel = cache and cache.velocity or currentTargetPart.AssemblyLinearVelocity or Vector3.new(0,0,0)
+                
+                if vel.Magnitude > 0.1 and myRoot then
+                    local dist = (targetPos - myRoot.Position).Magnitude
+                    targetPos = targetPos + (vel * (dist * Settings.DistancePredictionMult))
+                end
+
+                local origin = Camera.CFrame.Position
+                local targetDirection = (targetPos - origin).Unit
+                local smoothAlpha = 1 / math.max(1, Settings.AimSmoothing)
+                visualSmoothDirection = visualSmoothDirection:Lerp(targetDirection, smoothAlpha)
+                local finalVisualTargetPos = origin + (visualSmoothDirection * (targetPos - origin).Magnitude)
+                local screenPos, onScreen = Camera:WorldToViewportPoint(finalVisualTargetPos)
+                
+                if onScreen then
+                    snapline.From = mouseLoc
+                    snapline.To = Vector2.new(screenPos.X, screenPos.Y)
+                    snapline.Visible = true
+                else
+                    snapline.Visible = false
+                end
+            else
+                visualSmoothDirection = Camera.CFrame.LookVector
+                snapline.Visible = false
+            end
+        end)
+
+        RunService.Heartbeat:Connect(function(deltaTime)
+            local function track(model)
+                for _, name in ipairs({"Head", "Torso", "UpperTorso"}) do
+                    local part = model:FindFirstChild(name)
+                    if part then
+                        local data = positionCache[part]
+                        if data then
+                            data.velocity = (part.Position - data.lastPos) / deltaTime
+                            data.lastPos = part.Position
+                        else
+                            positionCache[part] = {lastPos = part.Position, velocity = Vector3.new(0,0,0)}
+                        end
+                    end
+                end
+            end
+            if workspace:FindFirstChild("Characters") then
+                for _, m in ipairs(workspace.Characters:GetChildren()) do if m ~= LocalPlayer.Character then track(m) end end
+            end
+        end)
+
+        function Bullets.Fire(self, playerController, weaponInstance, weaponData, origin, direction, shotId)
+            local originalSpreadValues = {}
+            local isHipfiring = true
+            if type(weaponData) == "table" then
+                local aimingState = weaponData.Aiming or weaponData.IsAiming or weaponData.ADS or (playerController and (playerController.Aiming or playerController.IsAiming))
+                if aimingState == true then isHipfiring = false end
+            end
+
+            if Settings.NoSpreadEnabled and isHipfiring and type(weaponData) == "table" then
+                local targetKeys = {"Spread", "BaseSpread", "MaxSpread", "MinSpread", "HipfireSpread", "HipSpread", "SpreadIncrement", "SpreadDecay", "Accuracy", "Inaccuracy"}
+                for _, key in ipairs(targetKeys) do
+                    if weaponData[key] ~= nil then
+                        originalSpreadValues[key] = weaponData[key]
+                        weaponData[key] = 0
+                    end
+                end
+            end
+
+            if not Settings.AimbotEnabled or not currentTargetPart or not currentTargetPart.Parent then 
+                local result = originalFire(self, playerController, weaponInstance, weaponData, origin, direction, shotId)
+                for key, value in pairs(originalSpreadValues) do weaponData[key] = value end
+                return result
+            end
+
+            local targetCharacter = currentTargetPart.Parent
+            local finalTargetPart = currentTargetPart
+            if Settings.TargetMode == "Head" then
+                local forcedHead = targetCharacter:FindFirstChild("Head")
+                if forcedHead then finalTargetPart = forcedHead end
+            elseif Settings.TargetMode == "UpperTorso" then
+                local forcedTorso = targetCharacter:FindFirstChild("UpperTorso") or targetCharacter:FindFirstChild("Torso")
+                if forcedTorso then finalTargetPart = forcedTorso end
+            end
+
+            local targetPos = finalTargetPart.Position
+            local cache = positionCache[finalTargetPart]
+            local vel = cache and cache.velocity or finalTargetPart.AssemblyLinearVelocity or Vector3.new(0,0,0)
+            
+            if vel.Magnitude > 0.1 then
+                local dist = (targetPos - origin).Magnitude
+                targetPos = targetPos + (vel * (dist * Settings.DistancePredictionMult))
+            end
+            
+            local calculatedDirection = (targetPos - origin).Unit
+            local smoothAlpha = 1 / math.max(1, Settings.AimSmoothing)
+            local finalDirection = direction:Lerp(calculatedDirection, smoothAlpha)
+            
+            local result = originalFire(self, playerController, weaponInstance, weaponData, origin, finalDirection, shotId)
+            for key, value in pairs(originalSpreadValues) do weaponData[key] = value end
+            return result
+        end
+    end)
+    
+    if not success then
+        warn("AR2 Script Error: ", err)
+    end
+]]
+
+local hasRunImportedScript = false
+-- ==========================================================
+
 --// ================= STATE =================
 local espEnabled = true
 local nameEnabled = false
 local friendCheckEnabled = true
 
-local highlights = {} -- [Player] = data
-local friendCache = {} -- [UserId] = true
+local highlights = {} 
+local friendCache = {} 
+
+local AimLock = {
+    Unlocked = false,
+    Enabled = false,
+    Key = Enum.KeyCode.X,
+    Prediction = 0.078,
+    AimPart = "LowerTorso",
+    Snappiness = 1.5,
+    FOVRadius = 250
+}
+local LockedPlayer = nil
+local lastSmoothChange = 0
+local SMOOTHNESS_COOLDOWN = 0.15
 
 --// ================= FRIEND CACHE =================
 local function cacheFriend(player)
@@ -28,23 +258,16 @@ local function cacheFriend(player)
 	end
 end
 
-for _, p in ipairs(Players:GetPlayers()) do
-	cacheFriend(p)
-end
-
+for _, p in ipairs(Players:GetPlayers()) do cacheFriend(p) end
 Players.PlayerAdded:Connect(cacheFriend)
-Players.PlayerRemoving:Connect(function(player)
-	friendCache[player.UserId] = nil
-end)
+Players.PlayerRemoving:Connect(function(player) friendCache[player.UserId] = nil end)
 
 --// ================= CLEANUP =================
 local function cleanupESP(player)
 	local data = highlights[player]
 	if not data then return end
-
 	if data.highlight then data.highlight:Destroy() end
 	if data.billboard then data.billboard:Destroy() end
-
 	highlights[player] = nil
 end
 
@@ -59,27 +282,17 @@ local function createESP(player)
 	local root = char:FindFirstChild("HumanoidRootPart")
 	local head = char:FindFirstChild("Head")
 	local humanoid = char:FindFirstChildOfClass("Humanoid")
-
 	if not root or not humanoid then return end
 
-	local isFriend = friendCache[player.UserId]
-
-	-- Highlight (PURPLE)
 	local hl = Instance.new("Highlight")
 	hl.Adornee = char
-
-	-- Purple Fill
-	hl.FillTransparency = 0.5
-	hl.FillColor = Color3.fromRGB(160, 32, 240)
-
-	-- Purple Outline
+	hl.FillTransparency = 1
+	hl.FillColor = Color3.new(1, 1, 1)
 	hl.OutlineTransparency = 0
-	hl.OutlineColor = Color3.fromRGB(160, 32, 240)
-
+	hl.OutlineColor = Color3.fromRGB(255, 255, 255)
 	hl.Enabled = espEnabled
 	hl.Parent = char
 
-	-- Billboard (Name + Distance)
 	local bb = Instance.new("BillboardGui")
 	bb.Size = UDim2.new(0, 140, 0, 40)
 	bb.AlwaysOnTop = true
@@ -92,54 +305,71 @@ local function createESP(player)
 		bb.Adornee = root
 		bb.StudsOffset = Vector3.new(0, 3.5, 0)
 	end
-
 	bb.Parent = char
 
 	local textLabel = Instance.new("TextLabel")
 	textLabel.Size = UDim2.new(1, 0, 1, 0)
 	textLabel.BackgroundTransparency = 1
-	textLabel.TextColor3 = Color3.new(1, 1, 1) -- Initial color, will be overridden by rainbow
+	textLabel.TextColor3 = Color3.new(1, 1, 1)
 	textLabel.TextStrokeTransparency = 0
 	textLabel.Font = Enum.Font.SourceSansBold
 	textLabel.TextSize = 14
 	textLabel.Text = ""
 	textLabel.Parent = bb
 
-	highlights[player] = {
-		highlight = hl,
-		root = root,
-		billboard = bb,
-		textLabel = textLabel
-	}
-
-	-- Cleanup on death
-	humanoid.Died:Connect(function()
-		cleanupESP(player)
-	end)
+	highlights[player] = { highlight = hl, root = root, billboard = bb, textLabel = textLabel }
+	humanoid.Died:Connect(function() cleanupESP(player) end)
 end
 
 --// ================= PLAYER TRACKING =================
 local function trackPlayer(player)
-	player.CharacterAdded:Connect(function()
-		task.wait(0.2)
-		createESP(player)
-	end)
-
-	player.CharacterRemoving:Connect(function()
-		cleanupESP(player)
-	end)
-
-	if player.Character then
-		createESP(player)
-	end
+	player.CharacterAdded:Connect(function() task.wait(0.2) createESP(player) end)
+	player.CharacterRemoving:Connect(function() cleanupESP(player) end)
+	if player.Character then createESP(player) end
 end
 
-for _, player in ipairs(Players:GetPlayers()) do
-	trackPlayer(player)
-end
-
+for _, player in ipairs(Players:GetPlayers()) do trackPlayer(player) end
 Players.PlayerAdded:Connect(trackPlayer)
 Players.PlayerRemoving:Connect(cleanupESP)
+
+--// ================= DISTANCE UPDATE =================
+local elapsed = 0
+RunService.Heartbeat:Connect(function(dt)
+	elapsed += dt
+	if elapsed < UPDATE_RATE then return end
+	elapsed = 0
+
+	local camPos = Camera.CFrame.Position
+	for player, data in pairs(highlights) do
+		local root = data.root
+		if root then
+			local distance = (root.Position - camPos).Magnitude
+			local isFriend = friendCache[player.UserId]
+			data.highlight.Enabled = espEnabled and distance <= MAX_DISTANCE and (not friendCheckEnabled or not isFriend)
+			data.textLabel.Text = player.Name .. " | " .. math.floor(distance) .. " studs"
+		end
+	end
+end)
+
+--// ================= AIMLOCK LOGIC =================
+local function FindTarget()
+    local mousePos = UIS:GetMouseLocation()
+    local closest, closestDist = nil, AimLock.FOVRadius
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild(AimLock.AimPart) and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            local part = plr.Character[AimLock.AimPart]
+            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                if dist <= closestDist then
+                    closest, closestDist = plr, dist
+                end
+            end
+        end
+    end
+    return closest
+end
 
 --// ================= TOGGLES =================
 UIS.InputBegan:Connect(function(input, gp)
@@ -147,55 +377,223 @@ UIS.InputBegan:Connect(function(input, gp)
 
 	if input.KeyCode == TOGGLE_KEY then
 		espEnabled = not espEnabled
-		for _, data in pairs(highlights) do
-			data.highlight.Enabled = espEnabled
-		end
+		for _, data in pairs(highlights) do data.highlight.Enabled = espEnabled end
 	end
 
 	if input.KeyCode == NAME_TOGGLE_KEY then
 		nameEnabled = not nameEnabled
-		for _, data in pairs(highlights) do
-			data.billboard.Enabled = nameEnabled
-		end
+		for _, data in pairs(highlights) do data.billboard.Enabled = nameEnabled end
 	end
 
 	if input.KeyCode == TOGGLE_FRIEND_KEY then
 		friendCheckEnabled = not friendCheckEnabled
 	end
+
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        local now = os.clock()
+
+        if input.KeyCode == AimLock.Key then
+            if not AimLock.Unlocked then return end 
+            AimLock.Enabled = not AimLock.Enabled
+            LockedPlayer = AimLock.Enabled and FindTarget() or nil
+            return
+        end
+
+        if now - lastSmoothChange < SMOOTHNESS_COOLDOWN then return end
+
+        if input.KeyCode == Enum.KeyCode.Minus then
+            lastSmoothChange = now
+            AimLock.Snappiness = math.max(0.5, AimLock.Snappiness - 0.1)
+        end
+
+        if input.KeyCode == Enum.KeyCode.Equals then
+            lastSmoothChange = now
+            AimLock.Snappiness += 0.1
+        end
+    end
 end)
 
---// ================= RAINBOW + DISTANCE UPDATE =================
-local elapsed = 0
-local hue = 0
+RunService.RenderStepped:Connect(function()
+    if not AimLock.Unlocked or not AimLock.Enabled or not LockedPlayer then return end
+    local char = LockedPlayer.Character
+    if not char or not char:FindFirstChild(AimLock.AimPart) or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then return end
 
-RunService.Heartbeat:Connect(function(dt)
-	-- Update rainbow color every frame
-	hue = (hue + dt * 0.5) % 1
-	local rainbowColor = Color3.fromHSV(hue, 1, 1)
+    local part = char[AimLock.AimPart]
+    local predicted = part.Position + (part.AssemblyLinearVelocity * AimLock.Prediction)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(predicted)
 
-	elapsed += dt
-	if elapsed < UPDATE_RATE then return end
-	elapsed = 0
+    if not onScreen then return end
 
-	local camPos = Camera.CFrame.Position
+    local mousePos = UIS:GetMouseLocation()
+    local delta = Vector2.new(screenPos.X, screenPos.Y) - mousePos
 
-	for player, data in pairs(highlights) do
-		local root = data.root
-		if root then
-			local distance = (root.Position - camPos).Magnitude
-			local isFriend = friendCache[player.UserId]
+    mousemoverel(delta.X * AimLock.Snappiness, delta.Y * AimLock.Snappiness)
+end)
 
-			-- Visibility only
-			data.highlight.Enabled =
-				espEnabled
-				and distance <= MAX_DISTANCE
-				and (not friendCheckEnabled or not isFriend)
+--// ================= STEALTH GUI =================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "SystemMenu"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-			data.textLabel.Text =
-				player.Name .. " | " .. math.floor(distance) .. " studs"
-			
-			-- Apply rainbow color to text
-			data.textLabel.TextColor3 = rainbowColor
-		end
-	end
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 160, 0, 120)
+MainFrame.Position = UDim2.new(0, 20, 0.5, -60)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 6)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.BackgroundTransparency = 1
+Title.Text = "System Menu"
+Title.TextColor3 = Color3.fromRGB(200, 200, 200)
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 14
+Title.Parent = MainFrame
+
+local ESPButton = Instance.new("TextButton")
+ESPButton.Size = UDim2.new(0.9, 0, 0, 30)
+ESPButton.Position = UDim2.new(0.05, 0, 0.25, 0)
+ESPButton.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(40, 40, 40)
+ESPButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+ESPButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESPButton.Font = Enum.Font.SourceSans
+ESPButton.TextSize = 14
+ESPButton.Parent = MainFrame
+Instance.new("UICorner", ESPButton).CornerRadius = UDim.new(0, 4)
+
+ESPButton.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    ESPButton.Text = "ESP: " .. (espEnabled and "ON" or "OFF")
+    ESPButton.BackgroundColor3 = espEnabled and Color3.fromRGB(0, 150, 0) or Color3.fromRGB(40, 40, 40)
+    
+    nameEnabled = espEnabled 
+    for _, data in pairs(highlights) do
+        data.highlight.Enabled = espEnabled
+        data.billboard.Enabled = nameEnabled
+    end
+end)
+
+--// ================= FLEASION BUTTON =================
+
+local FleasionButton = Instance.new("TextButton")
+FleasionButton.Size = UDim2.new(0.9, 0, 0, 30)
+FleasionButton.Position = UDim2.new(0.05, 0, 0.52, 0)
+FleasionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+FleasionButton.Text = "Fleasion"
+FleasionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FleasionButton.Font = Enum.Font.SourceSansBold
+FleasionButton.TextSize = 14
+FleasionButton.Parent = MainFrame
+
+Instance.new("UICorner", FleasionButton).CornerRadius = UDim.new(0, 4)
+
+local plasticModeEnabled = false
+
+FleasionButton.MouseButton1Click:Connect(function()
+
+    if plasticModeEnabled then
+        return
+    end
+
+    plasticModeEnabled = true
+
+    FleasionButton.Text = "Fleasion: ON"
+    FleasionButton.BackgroundColor3 = Color3.fromRGB(0, 150, 0)
+
+    local function MakePlastic(object)
+        if object:IsA("BasePart") then
+            object.Material = Enum.Material.Plastic
+            object.Reflectance = 0
+
+            if object:IsA("MeshPart") then
+                object.TextureID = ""
+            end
+        end
+
+        if object:IsA("SpecialMesh") then
+            object.TextureId = ""
+        end
+    end
+
+    -- Apply to existing objects
+    for _, object in ipairs(workspace:GetDescendants()) do
+        MakePlastic(object)
+    end
+
+    -- Apply to newly added objects
+    workspace.DescendantAdded:Connect(function(object)
+        task.wait()
+        MakePlastic(object)
+    end)
+
+    print("Plastic mode enabled!")
+end)
+
+local CodeInput = Instance.new("TextBox")
+CodeInput.Size = UDim2.new(0.9, 0, 0, 25)
+CodeInput.Position = UDim2.new(0.05, 0, 0.75, 0)
+CodeInput.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+CodeInput.PlaceholderText = "Enter System Code..."
+CodeInput.Text = ""
+CodeInput.TextColor3 = Color3.fromRGB(150, 150, 150)
+CodeInput.Font = Enum.Font.Code
+CodeInput.TextSize = 12
+CodeInput.Parent = MainFrame
+Instance.new("UICorner", CodeInput).CornerRadius = UDim.new(0, 4)
+
+CodeInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        if CodeInput.Text == "132011" then
+            AimLock.Unlocked = true
+            CodeInput.Text = "AIM UNLOCKED"
+            CodeInput.TextColor3 = Color3.fromRGB(0, 255, 0)
+            task.wait(1)
+            CodeInput.Text = ""
+            CodeInput.PlaceholderText = "Enter System Code..."
+            CodeInput.TextColor3 = Color3.fromRGB(150, 150, 150)
+            
+        elseif CodeInput.Text == "777888" then
+            if not hasRunImportedScript then
+                CodeInput.Text = "LOADING AR2..."
+                CodeInput.TextColor3 = Color3.fromRGB(0, 255, 0)
+                
+                local success, err = pcall(function()
+                    local func = loadstring(ImportedScriptCode)
+                    if func then func() else error("Invalid Lua code.") end
+                end)
+                
+                if success then
+                    hasRunImportedScript = true
+                    CodeInput.Text = "AR2 LOADED"
+                else
+                    CodeInput.Text = "LOAD ERROR"
+                    warn("[System] Script load error: " .. tostring(err))
+                end
+                
+                task.wait(1.5)
+                CodeInput.Text = ""
+                CodeInput.PlaceholderText = "Enter System Code..."
+                CodeInput.TextColor3 = Color3.fromRGB(150, 150, 150)
+            else
+                CodeInput.Text = "ALREADY LOADED"
+                task.wait(1)
+                CodeInput.Text = ""
+            end
+        else
+            CodeInput.Text = ""
+        end
+    end
+end)
+
+
+-- PASTE STARTING HERE
+UIS.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.L then
+        MainFrame.Visible = not MainFrame.Visible
+    end
 end)
